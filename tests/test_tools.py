@@ -288,7 +288,7 @@ async def test_place_order_uses_default_venue_and_maps_every_field(
             "quantity": "2.5",
             "limit_price": "123.45",
             "valid_to_date": "2026-12-31T23:59:59Z",
-            "device": "device-1",
+            "device_serial": "device-1",
         },
     )
 
@@ -367,7 +367,7 @@ async def test_cancel_order_passes_the_string_order_id(
     result = await call(
         provider,
         "cancel_order",
-        {"order_id": "ORDER-1", "device": "device-1"},
+        {"order_id": "ORDER-1", "device_serial": "device-1"},
     )
 
     assert result.is_error is False
@@ -430,7 +430,7 @@ async def test_unlock_requests_a_push_when_locked(
     assert result.is_error is False
     broker_mock.sessiontan.unlock.assert_called_once_with("device-1", timeout=30.0)
     assert result.structured_content == {
-        "unlocked": True,
+        "authorized": True,
         "already_authorized": False,
     }
 
@@ -446,7 +446,7 @@ async def test_unlock_is_a_no_op_when_already_authorized(
     assert result.is_error is False
     broker_mock.sessiontan.unlock.assert_not_called()
     assert result.structured_content == {
-        "unlocked": True,
+        "authorized": True,
         "already_authorized": True,
     }
 

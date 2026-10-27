@@ -46,9 +46,12 @@ def register_instrument_tools(server: MCPServer[Any], provider: ClientProvider) 
     ) -> dict[str, Any]:
         """Return the instrument master record for an ISIN.
 
-        Includes the asset class, trading state, order increments and limits,
-        fees, and all trading venues with their MIC codes and default-venue
-        flag. Use a venue's mic_code when placing an order.
+        Includes the asset class, trading state, quote currency, disabled
+        execution types, order increments and limits, fees, and all trading
+        venues with their MIC codes, trading hours and default-venue flag.
+        Call this before place_order to check tradable, disabled_exec_types,
+        min_qty, qty_incr, price_incr, minimum_order_value and
+        quote_currency_code; use a venue's mic_code when placing an order.
         """
         with tool_errors(), provider.session() as client:
             return dump(client.instrument.get(normalize_isin(isin)))

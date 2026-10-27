@@ -9,9 +9,38 @@ from zero_mcp.config import ConfigurationError, Settings
 def test_defaults_are_read_only_and_unconfigured() -> None:
     settings = Settings()
     assert settings.read_only is False
+    assert settings.yolo_mode is False
     assert settings.default_device is None
     with pytest.raises(ConfigurationError, match="ZERO_USERNAME and ZERO_PASSWORD"):
         settings.require_credentials()
+
+
+def test_yolo_mode_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ZERO_YOLO_MODE", "true")
+
+    assert Settings().yolo_mode is True
+
+
+def test_unprefixed_yolo_mode_alias_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YOLO_MODE", "true")
+
+    assert Settings().yolo_mode is True
+
+
+def test_prefixed_yolo_mode_wins_when_both_aliases_are_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ZERO_YOLO_MODE", "false")
+    monkeypatch.setenv("YOLO_MODE", "true")
+
+    assert Settings().yolo_mode is False
+
+
+def test_yolo_mode_rejects_an_invalid_boolean(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ZERO_YOLO_MODE", "sometimes")
+
+    with pytest.raises(ValueError):
+        Settings()
 
 
 def test_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,7 +5,7 @@ Credentials are only validated when the first tool call needs the broker, so
 passes the variables to the stdio process, e.g. in ``claude_desktop_config.json``.
 """
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,10 @@ class Settings(BaseSettings):
       2FA order-execution push when several devices are enrolled.
     - ``ZERO_READ_ONLY`` — when true, mutating tools (orders, 2FA unlock,
       watchlist changes) are not registered at all. Default: false.
+    - ``ZERO_YOLO_MODE`` (alias ``YOLO_MODE``) — when true, the server tells
+      the model to place and cancel orders without asking the user for
+      confirmation first. Default: false. Ignored when ``ZERO_READ_ONLY`` is
+      true, because the order tools are not registered then.
     """
 
     model_config = SettingsConfigDict(
@@ -49,6 +53,15 @@ class Settings(BaseSettings):
     read_only: bool = Field(
         default=False,
         description="Disable every tool that changes broker state.",
+    )
+    yolo_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ZERO_YOLO_MODE", "YOLO_MODE"),
+        description=(
+            "Skip the model-level confirmation for real-money orders. The "
+            "prefixed name wins if both aliases are set. Ignored in read-only "
+            "mode."
+        ),
     )
 
     def require_credentials(self) -> tuple[str, str]:

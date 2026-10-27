@@ -41,10 +41,18 @@ READ_TOOLS = {
 }
 
 
-def make_server(provider: ClientProvider, *, read_only: bool = False) -> MCPServer[Any]:
+def make_server(
+    provider: ClientProvider,
+    *,
+    read_only: bool = False,
+    yolo_mode: bool = False,
+) -> MCPServer[Any]:
     return create_server(
         Settings(
-            username="user@example.com", password=SecretStr("pass"), read_only=read_only
+            username="user@example.com",
+            password=SecretStr("pass"),
+            read_only=read_only,
+            yolo_mode=yolo_mode,
         ),
         provider=provider,
     )
@@ -73,6 +81,59 @@ async def test_read_only_mode_hides_every_write_tool(provider: ClientProvider) -
         tools = await client.list_tools()
 
     assert {tool.name for tool in tools.tools} == READ_TOOLS
+
+
+async def test_default_instructions_require_explicit_confirmation(
+    provider: ClientProvider,
+) -> None:
+    server = make_server(provider)
+
+    async with Client(server) as client:
+        instructions = client.instructions
+
+    assert instructions is not None
+    assert "explicit confirmation" in instructions
+    assert "YOLO MODE IS ENABLED" not in instructions
+
+
+async def test_yolo_mode_authorises_orders_without_confirmation(
+    provider: ClientProvider,
+) -> None:
+    server = make_server(provider, yolo_mode=True)
+
+    async with Client(server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        instructions = client.instructions
+
+    assert instructions is not None
+    assert "YOLO MODE IS ENABLED" in instructions
+    assert "without asking the user to confirm" in " ".join(instructions.split())
+    assert "Never call place_order" not in instructions
+
+    # YOLO mode only removes the confirmation step; the host is still told that
+    # these tools move real money, and the broker's 2FA push still applies.
+    annotations = tools["place_order"].annotations
+    assert annotations is not None
+    assert annotations.read_only_hint is False
+    assert annotations.destructive_hint is True
+    description = tools["place_order"].description
+    assert description is not None
+    assert "YOLO mode" in description
+
+
+async def test_read_only_mode_takes_precedence_over_yolo_mode(
+    provider: ClientProvider,
+) -> None:
+    server = make_server(provider, read_only=True, yolo_mode=True)
+
+    async with Client(server) as client:
+        tools = await client.list_tools()
+        instructions = client.instructions
+
+    assert {tool.name for tool in tools.tools} == READ_TOOLS
+    assert instructions is not None
+    assert "READ-ONLY" in instructions
+    assert "YOLO MODE IS ENABLED" not in instructions
 
 
 async def test_list_orders_filter_is_enumerated_in_the_tool_schema(

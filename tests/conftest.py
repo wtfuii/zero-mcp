@@ -34,6 +34,8 @@ def clean_zero_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         "ZERO_PASSWORD",
         "ZERO_DEFAULT_DEVICE",
         "ZERO_READ_ONLY",
+        "ZERO_YOLO_MODE",
+        "YOLO_MODE",
     ):
         monkeypatch.delenv(name, raising=False)
     yield

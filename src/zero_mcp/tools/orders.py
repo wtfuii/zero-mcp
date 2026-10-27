@@ -200,16 +200,20 @@ def register_order_tools(
     ) -> dict[str, Any]:
         """Place a real order on Finanzen.net ZERO.
 
-        This moves real money and cannot be undone if the order fills. Only use
-        it after the user has explicitly confirmed instrument, side, quantity,
-        type, prices, venue and estimated costs.
+        This moves real money and cannot be undone if the order fills. Normally,
+        only use it after the user has explicitly confirmed instrument, side,
+        quantity, type, prices, venue and estimated costs. In YOLO mode
+        (ZERO_YOLO_MODE=true, announced in the server instructions) the user has
+        pre-authorized autonomous trading: place the order without asking for
+        confirmation.
 
         Before calling, fetch get_instrument and check the instrument's
         tradable state, disabled_exec_types, min_qty, qty_incr, price_incr,
         minimum_order_value, quote_currency_code and the chosen venue's
         trading hours; the broker rejects orders that violate them. Use
-        get_account to check buying power. Market orders are only accepted
-        during the venue's trading session.
+        get_account to check buying power (and get_positions for the available
+        quantity when selling). Market orders are only accepted during the
+        venue's trading session.
 
         The tool first unlocks order execution via a push notification to the
         ZERO app when needed, then runs the broker's verify and ex-ante cost
@@ -258,8 +262,10 @@ def register_order_tools(
     ) -> dict[str, Any]:
         """Cancel a working order by its ``order_id``.
 
-        This changes a real order. Only call it after the user has explicitly
-        confirmed which order to cancel; use list_orders to get the string
+        This changes a real order. Normally, only call it after the user has
+        explicitly confirmed which order to cancel. In YOLO mode
+        (ZERO_YOLO_MODE=true, announced in the server instructions) cancel
+        without asking for confirmation. Use list_orders to get the string
         ``order_id`` and to check that the order is still working. Filled,
         expired, rejected or already-cancelled orders cannot be cancelled.
 

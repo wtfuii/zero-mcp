@@ -14,7 +14,7 @@ The server is started by an MCP host (Claude Desktop, Claude Code, Cursor, …) 
 - **stdio only**: the server is launched locally. Do not add an HTTP/SSE transport unless the user explicitly asks. **stdout is the MCP protocol channel**: never print to stdout (the one stderr `print` in `main()` is for a startup configuration error), and never let a library write there. Diagnostics go to stderr via `logging`.
 - **One lazy client**: tools obtain the broker client only through `ClientProvider.session()`, which holds a process-wide lock for the whole broker interaction. The client is created on the first tool call, never at import or server construction, so `tools/list` works without credentials. Keep the lazy creation and the serialization: the client keeps mutable session state (cookies, refresh, 2FA unlock) that must not be raced by concurrent MCP tool calls. Never call the client outside `session()`.
 - **Credentials are environment variables only**: `ZERO_USERNAME` (the login e-mail address) and `ZERO_PASSWORD`. Never add a credentials file, CLI password flag, hard-coded secret, or log the password/username. `Settings.password` is a `SecretStr`; keep it that way.
-- **Real money**: `place_order` and `cancel_order` are annotated `destructiveHint=True` and `readOnlyHint=False`. `ZERO_READ_ONLY=true` must remove every mutating tool from registration (and from the tool list), not merely reject calls. Never weaken this default behaviour.
+- **Real money**: `place_order` and `cancel_order` are annotated `destructiveHint=True` and `readOnlyHint=False`. `ZERO_READ_ONLY=true` must remove every mutating tool from registration (and from the tool list), not merely reject calls. Never weaken this default behaviour. `ZERO_YOLO_MODE` (alias `YOLO_MODE`) is off by default and may only remove the model-level confirmation from the server instructions and order tool descriptions; it must not change annotations, read-only gating or the broker's 2FA, and a host's own approval prompt is outside the server's control.
 - **Errors**: tool failures are translated in `errors.py` into `ToolError` with an actionable message (missing config, bad login, 2FA, broker rejection, network). Unknown exceptions stay unexpected tool errors.
 
 ## Repository layout
@@ -54,7 +54,7 @@ tests/
 - Output keys are the library's **snake_case field names**, not broker camelCase aliases. Decimals are JSON strings to preserve precision; datetimes are ISO 8601. `get_chart` deliberately rebuilds each bar to expose `open` instead of the model's Python-only `open_`.
 - Tool names have no prefix (`get_account`, `place_order`, …); the server is namespaced by the MCP host. Keep names verb-first and stable.
 - `place_order` resolves a missing `mic_code` from the instrument's default trading venue (one extra master-data call); an explicit MIC skips that call.
-- Tool docstrings are user-facing model instructions. They must state side effects, blocking behaviour and required confirmation for real-money operations.
+- Tool docstrings are user-facing model instructions. They must state side effects, blocking behaviour and the confirmation rule for real-money operations, including the `ZERO_YOLO_MODE` exception.
 - When adding/removing/renaming a tool, update **all** of: registration, tests (`tests/test_server.py` tool sets), README tool table, and `READ_TOOLS`/`WRITE_TOOLS` expectations.
 
 ## Testing
