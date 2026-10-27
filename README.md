@@ -67,18 +67,13 @@ confirmation.
 
 ## Features
 
-- **Full slice coverage.** Account, instrument search/master data/detail/charts, depot positions,
+- **Full lib coverage.** Account, instrument search/master data/detail/charts, depot positions,
   watchlist, orders, and the app-push 2FA that unlocks order execution.
 - **Local stdio only.** The MCP host spawns the process; there is no listening port, no browser and
   no Playwright/Selenium dependency.
-- **Lazy login.** `tools/list` and server startup need no credentials. The first broker call logs in
-  through Cognito SRP over plain HTTP; later calls reuse the in-memory session and refresh it
-  automatically.
 - **One serialized session.** All tools share a single lock-protected `ZeroClient`; broker calls are
   serialized so concurrent MCP tool requests cannot race the login, session refresh, 2FA unlock or
   order flow.
-- **Typed end to end.** Pydantic models from `finanzen-zero-api`, `mypy --strict`, JSON-safe output
-  with precision-preserving decimal strings and ISO 8601 timestamps.
 - **Errors meant for a model.** Missing configuration, bad credentials, 2FA timeouts, broker
   rejections and network failures become actionable MCP tool errors instead of stack traces.
 - **Three safety modes.** `ZERO_MODE=READ` removes every mutating tool — orders, 2FA unlock and
@@ -325,7 +320,7 @@ login fail.
   when you intend to let the assistant trade. If a `place_order` call fails after submission
   (timeout or network error), check `list_orders` before retrying — the order may already exist.
 - **YOLO mode is a footgun.** `ZERO_MODE=YOLO` removes the model-level requirement to ask before
-  placing or cancelling an order. The modes are exclusive, so it never applies together with `READ`.
+  placing or cancelling an order.
   It does not bypass the broker's 2FA push, and it does not change an MCP host's own approval
   prompt — configure that in the host separately. Use it only on an account and with amounts you can
   afford to trade without a human in the loop.
