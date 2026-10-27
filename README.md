@@ -24,28 +24,10 @@
 local [Model Context Protocol](https://modelcontextprotocol.io) server. It is published on PyPI as
 [`finanzen-zero-mcp`](https://pypi.org/project/finanzen-zero-mcp/) and installs the `zero-mcp`
 console script. An MCP host such as Claude Desktop, Claude Code or Cursor starts the server over
-**stdio**, and an assistant can then read the account, search instruments, inspect charts, list depot
-positions and watchlist entries, review orders, and — when explicitly enabled — place
-or cancel orders. `ZERO_MODE` selects how much of that surface is exposed: `READ` hides every
-mutating tool, `WRITE` (the default) requires per-order confirmation, and `YOLO` drops that
-confirmation.
-
-```json
-{
-  "mcpServers": {
-    "finanzen-zero": {
-      "command": "uv",
-      "args": ["run", "--directory", "/absolute/path/to/zero-mcp", "zero-mcp"],
-      "env": {
-        "ZERO_USERNAME": "you@example.com",
-        "ZERO_PASSWORD": "your-password"
-      }
-    }
-  }
-}
-```
-
----
+**stdio**; an assistant can then read the account, search instruments, inspect charts, list depot
+positions and watchlist entries, review orders, and place or cancel orders. `ZERO_MODE` controls
+whether the mutating tools are exposed and whether orders need confirmation — see
+[Configuration](#configuration).
 
 ## Contents
 
@@ -67,26 +49,22 @@ confirmation.
 
 ## Features
 
-- **Full lib coverage.** Account, instrument search/master data/detail/charts, depot positions,
+- **Full library coverage.** Account, instrument search/master data/detail/charts, depot positions,
   watchlist, orders, and the app-push 2FA that unlocks order execution.
 - **Local stdio only.** The MCP host spawns the process; there is no listening port, no browser and
   no Playwright/Selenium dependency.
 - **One serialized session.** All tools share a single lock-protected `ZeroClient`; broker calls are
-  serialized so concurrent MCP tool requests cannot race the login, session refresh, 2FA unlock or
-  order flow.
+  serialized so concurrent requests cannot race the login, session refresh, 2FA unlock or order
+  flow.
 - **Errors meant for a model.** Missing configuration, bad credentials, 2FA timeouts, broker
   rejections and network failures become actionable MCP tool errors instead of stack traces.
-- **Three safety modes.** `ZERO_MODE=READ` removes every mutating tool — orders, 2FA unlock and
-  watchlist changes — from the exposed tool list. `WRITE` (the default) registers them and requires
-  the assistant to obtain explicit confirmation before every real-money order. `YOLO` drops that
-  confirmation but never the broker's 2FA push.
-- **Offline test suite.** A mocked broker client and a real stdio subprocess test; no live calls, no
-  credentials needed in CI.
+- **Offline test suite.** A mocked broker client and a real stdio subprocess test; no live calls and
+  no credentials needed in CI.
 
 ## Tools
 
-Fifteen tools are registered in the default (trading-enabled) mode. Tools marked **write** are not
-registered when `ZERO_MODE=READ`.
+Fifteen tools are registered in the default mode. The ten read tools are always available; the five
+write tools are absent from `tools/list` when `ZERO_MODE=READ`.
 
 | Tool | Kind | What it does |
 |---|---|---|
@@ -106,13 +84,9 @@ registered when `ZERO_MODE=READ`.
 | `place_order` | **write, real money** | Place a market/limit/stop-limit/OCO/trailing-stop order. |
 | `cancel_order` | **write, real money** | Cancel an open order by its `order_id`. |
 
-Order execution auto-unlocks the 2FA session when needed. Passing no `device_serial` uses
-`ZERO_DEFAULT_DEVICE`, then the only enrolled device; with several devices and no default, the call
-refuses rather than guessing. Order tools can block for up to 60 seconds while the push is approved.
-
-By default the server instructions require the user's explicit confirmation before `place_order` or
-`cancel_order`. Setting `ZERO_MODE=YOLO` removes that instruction and tells the model to trade
-autonomously; it does not change the 2FA push or the host's own tool-approval prompt.
+Order tools unlock the 2FA session automatically and can block for up to 60 seconds while the push is
+approved. Their confirmation policy is set by `ZERO_MODE` (see [Configuration](#configuration)); for
+device selection see [Authentication and 2FA](#authentication-and-2fa).
 
 ## Requirements
 
@@ -123,7 +97,6 @@ autonomously; it does not change the 2FA push or the host's own tool-approval pr
 | **The ZERO mobile app** | Needed only for order execution: the 2FA push is approved on a paired device. Read-only tools work without it. |
 | **Network access to `mein.finanzen-zero.net`** | Every endpoint lives there. There is no sandbox. |
 | **An MCP host** | Claude Desktop, Claude Code, Cursor, or any client that launches local stdio servers. |
-| **uv (recommended)** | Installs dependencies and provides the `uv run` launch command; alternatively run the `.venv` console script directly. |
 
 ## Installation
 
@@ -138,14 +111,14 @@ uv sync
 `uv sync` installs the server and its dependencies into `.venv`. The MCP host should run the
 `zero-mcp` console script through `uv run` (see [Connect an MCP host](#connect-an-mcp-host)).
 
-With pip, once the package is published:
+With pip:
 
 ```bash
 pip install finanzen-zero-mcp
 zero-mcp
 ```
 
-Or run it without installing, with [uv](https://docs.astral.sh/uv/):
+Or run it without installing, with uv:
 
 ```bash
 uvx --from finanzen-zero-mcp zero-mcp
@@ -164,26 +137,36 @@ Configuration is read from environment variables, which the MCP host passes to t
 | `ZERO_USERNAME` | for any broker call | — | The ZERO login **e-mail address** (the client's `email`). |
 | `ZERO_PASSWORD` | for any broker call | — | The ZERO account password. |
 | `ZERO_DEFAULT_DEVICE` | no | — | 2FA device serial used when several devices are enrolled. |
-| `ZERO_MODE` | no | `WRITE` | `READ` removes all mutating tools; `WRITE` requires per-order confirmation; `YOLO` skips it. Case-insensitive. |
+| `ZERO_MODE` | no | `WRITE` | `READ`, `WRITE` or `YOLO`; see [below](#safety-modes-zero_mode). Case-insensitive. |
 
 Startup and `tools/list` work without credentials; a tool call then fails with a clear
 `not configured` message. Credentials are held in memory by the `ZeroClient`, are never written to
 disk by this server, and are never logged. The password is stored as a `SecretStr`.
 
-`ZERO_MODE` selects one of three mutually exclusive modes. `READ` registers only the ten read tools:
-orders, the 2FA unlock and watchlist changes are absent from `tools/list`. `WRITE` (the default)
-registers them and tells the model to obtain explicit confirmation before `place_order` or
-`cancel_order`. `YOLO` registers them and removes the confirmation requirement from the server
-instructions and the order tools. The broker's app-push 2FA and any tool-approval prompt configured
-in the MCP host are **not** affected in any mode: the server cannot override its host.
-
 > Environment variables are visible to the spawned process and (depending on the host) to other
 > local processes. Do not commit an MCP config containing your password, and prefer
 > `ZERO_MODE=READ` unless you actively want trading tools.
 
-## Connect an MCP host
+### Safety modes (`ZERO_MODE`)
 
-### Claude Desktop / Cursor / generic JSON config
+`ZERO_MODE` is one switch with three mutually exclusive, case-insensitive values:
+
+| Value | Registered tools | Order confirmation |
+|---|---|---|
+| `READ` | read tools only; the five write tools (watchlist edits, 2FA unlock, place/cancel order) are not registered | not applicable |
+| `WRITE` (default) | all fifteen tools | the model must obtain the user's explicit confirmation before `place_order` or `cancel_order` |
+| `YOLO` | all fifteen tools | no confirmation requirement in the server instructions or order tool descriptions |
+
+Tools removed in `READ` never appear in `tools/list`. `WRITE` and `YOLO` differ only in the
+instruction attached to the order tools; neither changes tool annotations. In every mode the broker's
+app-push 2FA and any tool-approval prompt configured in the MCP host still apply — the server cannot
+override its host.
+
+> **`YOLO` is a footgun.** It removes the model-level requirement to ask before placing or cancelling
+> an order. Use it only on an account and with amounts you can afford to trade without a human in
+> the loop.
+
+## Connect an MCP host
 
 Use an **absolute path** to this checkout:
 
@@ -267,15 +250,12 @@ Once the server is connected, ask the assistant in natural language:
 - “What is my current buying power and next closing date?”
 - “Search for Apple and show me the one-year chart.”
 - “Which positions do I hold and what are they worth at the latest quote?”
-- “List my open orders and cancel order ID `GBR…`.” — requires 2FA approval, plus confirmation
-  unless `ZERO_MODE=YOLO` is set.
-- “Place a limit buy for 1 share of Apple at €200 on gettex.” — the assistant repeats every
-  parameter and asks for explicit confirmation before calling `place_order`, unless
-  `ZERO_MODE=YOLO` is set.
+- “List my open orders and cancel order ID `GBR…`.”
+- “Place a limit buy for 1 share of Apple at €200 on gettex.”
 - “I approved the push — check whether order execution is unlocked.”
 
-The assistant discovers the account by calling the read tools. There is no separate login tool: the
-first call logs in, and the shared session is reused afterwards.
+The assistant discovers the account through the read tools. There is no separate login tool, and the
+shared session is reused across calls.
 
 ## Authentication and 2FA
 
@@ -292,9 +272,11 @@ Order execution additionally requires the app-push **session TAN** unlock:
 1. `place_order` / `cancel_order` probe `is_authorized`; when locked they request a push to the
    configured device and wait for approval.
 2. `unlock_order_execution` exposes that step explicitly, with a configurable timeout and no-op when
-   already unlocked.
+   already unlocked. It is useful only for pre-authorizing a batch or waiting longer than the order
+   tools' built-in 60 seconds.
 3. If exactly one device is enrolled it is used automatically. With several devices, set
-   `ZERO_DEFAULT_DEVICE` or call `list_enrolled_devices` and pass a serial.
+   `ZERO_DEFAULT_DEVICE` or call `list_enrolled_devices` and pass a serial; otherwise the call fails
+   rather than guessing.
 
 Keep the host clock synchronized (NTP): SRP signs a UTC timestamp, and large clock skew makes the
 login fail.
@@ -316,25 +298,15 @@ login fail.
 ## Safety and security
 
 - **Real orders.** `place_order` and `cancel_order` are marked `destructiveHint` and
-  `readOnlyHint=false`. A market order can fill immediately and cannot be undone. Only enable them
-  when you intend to let the assistant trade. If a `place_order` call fails after submission
-  (timeout or network error), check `list_orders` before retrying — the order may already exist.
-- **YOLO mode is a footgun.** `ZERO_MODE=YOLO` removes the model-level requirement to ask before
-  placing or cancelling an order.
-  It does not bypass the broker's 2FA push, and it does not change an MCP host's own approval
-  prompt — configure that in the host separately. Use it only on an account and with amounts you can
-  afford to trade without a human in the loop.
-- **Read-only is a choice, not the default.** The server defaults to full functionality (`WRITE`) to
-  mirror the library. Set `ZERO_MODE=READ` for a safe default; this also removes the 2FA unlock tool.
-- **No credential storage.** Passwords arrive via environment variables and stay in memory. This
-  server does not read `.env` files, keychains or config files. Treat MCP host config files as
-  secrets when they contain `ZERO_PASSWORD`.
-- **2FA is not bypassed.** Order execution still requires approval on the paired phone. The server
-  only automates the request/poll/verify flow.
-- **Unofficial.** The broker can change or block these private endpoints at any time. Schema drift is
-  surfaced as a tool error rather than silently wrong data.
-- **Your responsibility.** Automating a brokerage account may violate the broker's terms. Use only
-  an account you are allowed to automate.
+  `readOnlyHint=false`. A market order can fill immediately and cannot be undone. If a placement
+  fails after submission (timeout or network error), check `list_orders` before retrying — the order
+  may already exist.
+- **Credentials.** Passwords arrive via environment variables and stay in memory. This server does
+  not read `.env` files, keychains or config files. Treat MCP host config files as secrets when they
+  contain `ZERO_PASSWORD`.
+- **Unofficial endpoints.** The broker can change or block these private endpoints at any time;
+  schema drift is surfaced as a tool error rather than silently wrong data. Automating a brokerage
+  account may violate the broker's terms — use only an account you are allowed to automate.
 
 ## Architecture
 
@@ -379,25 +351,20 @@ Set `ZERO_USERNAME`/`ZERO_PASSWORD` in the inspector's environment only if you i
 (read-only) calls. There is **no live smoke test in CI** and tests must never contact the broker.
 
 See [AGENTS.md](AGENTS.md) for the architecture rules, MCP SDK conventions and contribution
-constraints. Adding a tool means touching registration, tests, the README tool table and (if it
-mutates state) the `ZERO_MODE=READ` gating.
-
-Releases are cut from a `vX.Y.Z` tag and published to PyPI through Trusted Publishing; the workflow
-also attaches the wheel and sdist to a GitHub release. See [RELEASING.md](RELEASING.md) for the
-one-time registry setup and the release checklist.
+constraints. Releases are cut from a `vX.Y.Z` tag and published to PyPI through Trusted Publishing;
+see [RELEASING.md](RELEASING.md) for the registry setup and release checklist.
 
 ## Limitations
 
-- **Unofficial, alpha.** The underlying client is `0.1.x`; the wrapper pins
-  `finanzen-zero-api>=0.1.0,<0.2.0`. Model or endpoint changes can break tool output until the
-  wrapper is updated.
+- **Version coupling.** The wrapper pins `finanzen-zero-api>=0.1.0,<0.2.0`. Model or endpoint
+  changes in the alpha client can break tool output until the wrapper is updated.
 - **stdio only.** No HTTP/SSE transport, no multi-user server, no OAuth. One process, one account.
 - **No order modification.** The broker client supports placing and cancelling, not amending.
 - **Blocking 2FA.** `place_order`, `cancel_order` and `unlock_order_execution` wait for the phone
   approval; MCP hosts with a short tool timeout may abort the call before the push is accepted.
 - **No streaming quotes.** Charts and details are snapshots returned by the private endpoints.
-- **No pagination helper.** `list_orders` returns one page and `has_next`; the page size is bounded
-  by the tool's `size` argument (max 1000).
+- **One page of orders.** `list_orders` returns a single page plus `has_next`; the page size is
+  bounded by the tool's `size` argument (max 1000).
 - **Unknown rate limits.** The broker publishes none; avoid tight polling loops.
 
 ## Project status
