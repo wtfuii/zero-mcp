@@ -14,7 +14,7 @@ The server is started by an MCP host (Claude Desktop, Claude Code, Cursor, …) 
 - **stdio only**: the server is launched locally. Do not add an HTTP/SSE transport unless the user explicitly asks. **stdout is the MCP protocol channel**: never print to stdout (the one stderr `print` in `main()` is for a startup configuration error), and never let a library write there. Diagnostics go to stderr via `logging`.
 - **One lazy client**: tools obtain the broker client only through `ClientProvider.session()`, which holds a process-wide lock for the whole broker interaction. The client is created on the first tool call, never at import or server construction, so `tools/list` works without credentials. Keep the lazy creation and the serialization: the client keeps mutable session state (cookies, refresh, 2FA unlock) that must not be raced by concurrent MCP tool calls. Never call the client outside `session()`.
 - **Credentials are environment variables only**: `ZERO_USERNAME` (the login e-mail address) and `ZERO_PASSWORD`. Never add a credentials file, CLI password flag, hard-coded secret, or log the password/username. `Settings.password` is a `SecretStr`; keep it that way.
-- **Real money**: `place_order` and `cancel_order` are annotated `destructiveHint=True` and `readOnlyHint=False`. `ZERO_READ_ONLY=true` must remove every mutating tool from registration (and from the tool list), not merely reject calls. Never weaken this default behaviour. `ZERO_YOLO_MODE` (alias `YOLO_MODE`) is off by default and may only remove the model-level confirmation from the server instructions and order tool descriptions; it must not change annotations, read-only gating or the broker's 2FA, and a host's own approval prompt is outside the server's control.
+- **Real money**: `place_order` and `cancel_order` are annotated `destructiveHint=True` and `readOnlyHint=False`. `ZERO_MODE` is a single switch with three mutually exclusive values: `READ` must remove every mutating tool from registration (and from the tool list), not merely reject calls; `WRITE` is the default and requires the model-level confirmation; `YOLO` may only remove that confirmation from the server instructions and order tool descriptions. Never weaken the default behaviour or the `READ` gating. `YOLO` must not change annotations, tool registration or the broker's 2FA, and a host's own approval prompt is outside the server's control.
 - **Errors**: tool failures are translated in `errors.py` into `ToolError` with an actionable message (missing config, bad login, 2FA, broker rejection, network). Unknown exceptions stay unexpected tool errors.
 
 ## Repository layout
@@ -60,7 +60,7 @@ tests/
 ## Testing
 
 - **No live broker calls in tests, ever.** No real credentials, no network. Tests use a `unittest.mock.Mock` client behind a fake `ClientProvider`; fixtures that need parsing use the real `zero_api` Pydantic models.
-- The test suite also launches the real `python -m zero_mcp` over stdio with `ZERO_READ_ONLY=true`. This guards stdout cleanliness and the entrypoint; keep that test.
+- The test suite also launches the real `python -m zero_mcp` over stdio with `ZERO_MODE=READ`. This guards stdout cleanliness and the entrypoint; keep that test.
 - Async tests use `pytest.mark.anyio` with the `asyncio` backend (`anyio_backend` fixture in `tests/conftest.py`). Do not add `pytest-asyncio`.
 - Verify with `uv run mypy .` **then** `uv run pytest`. Both must be green; CI runs the same order.
 

@@ -5,12 +5,32 @@ Credentials are only validated when the first tool call needs the broker, so
 passes the variables to the stdio process, e.g. in ``claude_desktop_config.json``.
 """
 
-from pydantic import AliasChoices, Field, SecretStr
+from enum import StrEnum
+
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ConfigurationError(Exception):
     """Required configuration is missing or invalid."""
+
+
+class TradeMode(StrEnum):
+    """How much of the broker surface the server exposes.
+
+    The three modes are mutually exclusive: a single switch is easier to
+    reason about than two independent booleans, where the combination
+    "read-only and YOLO" could only ever mean read-only.
+    """
+
+    READ = "READ"
+    """Register no mutating tool at all (orders, 2FA unlock, watchlist edits)."""
+
+    WRITE = "WRITE"
+    """Register the mutating tools; the model must obtain explicit confirmation."""
+
+    YOLO = "YOLO"
+    """Register the mutating tools without the model-level confirmation requirement."""
 
 
 class Settings(BaseSettings):
@@ -23,12 +43,11 @@ class Settings(BaseSettings):
     - ``ZERO_PASSWORD`` — the account password (required for any broker call).
     - ``ZERO_DEFAULT_DEVICE`` — optional serial of the device that receives the
       2FA order-execution push when several devices are enrolled.
-    - ``ZERO_READ_ONLY`` — when true, mutating tools (orders, 2FA unlock,
-      watchlist changes) are not registered at all. Default: false.
-    - ``ZERO_YOLO_MODE`` (alias ``YOLO_MODE``) — when true, the server tells
-      the model to place and cancel orders without asking the user for
-      confirmation first. Default: false. Ignored when ``ZERO_READ_ONLY`` is
-      true, because the order tools are not registered then.
+    - ``ZERO_MODE`` — ``READ``, ``WRITE`` (default) or ``YOLO``. ``READ`` does
+      not register the mutating tools (orders, 2FA unlock, watchlist changes)
+      at all; ``WRITE`` registers them and requires explicit confirmation for
+      real-money orders; ``YOLO`` registers them and tells the model to trade
+      without asking. Values are case-insensitive.
     """
 
     model_config = SettingsConfigDict(
@@ -50,19 +69,20 @@ class Settings(BaseSettings):
         default=None,
         description="Serial of the 2FA device to use when several are enrolled.",
     )
-    read_only: bool = Field(
-        default=False,
-        description="Disable every tool that changes broker state.",
-    )
-    yolo_mode: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("ZERO_YOLO_MODE", "YOLO_MODE"),
+    mode: TradeMode = Field(
+        default=TradeMode.WRITE,
         description=(
-            "Skip the model-level confirmation for real-money orders. The "
-            "prefixed name wins if both aliases are set. Ignored in read-only "
-            "mode."
+            "How much of the broker surface to expose: READ removes every "
+            "mutating tool, WRITE requires per-order confirmation, YOLO skips "
+            "that confirmation."
         ),
     )
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: object) -> object:
+        """Accept ``read``/``Read`` as well as ``READ`` from the environment."""
+        return value.strip().upper() if isinstance(value, str) else value
 
     def require_credentials(self) -> tuple[str, str]:
         """Return ``(username, password)`` or raise :class:`ConfigurationError`.

@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from zero_mcp import __version__
 from zero_mcp.client import ClientProvider, ZeroClientProvider
-from zero_mcp.config import Settings
+from zero_mcp.config import Settings, TradeMode
 from zero_mcp.tools import (
     register_account_tools,
     register_instrument_tools,
@@ -55,7 +55,7 @@ list_orders for an existing order first.
 """
 
 _YOLO_NOTICE = """\
-YOLO MODE IS ENABLED (ZERO_YOLO_MODE=true): the user has pre-authorized
+YOLO MODE IS ENABLED (ZERO_MODE=YOLO): the user has pre-authorized
 autonomous trading. Place and cancel real-money orders without asking the
 user to confirm, and do not repeat the parameters for approval first. The
 usual safeguards still apply: check get_instrument and get_account before
@@ -66,17 +66,17 @@ waiting for that approval.
 """
 
 _READ_ONLY_NOTICE = """\
-This server runs in READ-ONLY mode (ZERO_READ_ONLY=true): order placement and
+This server runs in READ-ONLY mode (ZERO_MODE=READ): order placement and
 cancellation, the 2FA unlock and watchlist changes are disabled.
 """
 
 
-def _build_instructions(*, read_only: bool, yolo_mode: bool) -> str:
-    """Compose the model instructions for the active registration mode."""
+def _build_instructions(*, mode: TradeMode) -> str:
+    """Compose the model instructions for the active ``ZERO_MODE``."""
     parts = [_BASE_INSTRUCTIONS]
-    if read_only:
+    if mode is TradeMode.READ:
         parts.append(_READ_ONLY_NOTICE)
-    elif yolo_mode:
+    elif mode is TradeMode.YOLO:
         parts.append(_YOLO_NOTICE)
     else:
         parts.append(_CONFIRMATION_NOTICE)
@@ -96,10 +96,9 @@ def create_server(
     """
     resolved = settings if settings is not None else Settings()
     client_provider = provider if provider is not None else ZeroClientProvider(resolved)
-    instructions = _build_instructions(
-        read_only=resolved.read_only,
-        yolo_mode=resolved.yolo_mode,
-    )
+    mode = resolved.mode
+    read_only = mode is TradeMode.READ
+    instructions = _build_instructions(mode=mode)
 
     server: MCPServer[Any] = MCPServer(
         name=SERVER_NAME,
@@ -112,14 +111,9 @@ def create_server(
     register_account_tools(server, client_provider)
     register_instrument_tools(server, client_provider)
     register_portfolio_tools(server, client_provider)
-    register_watchlist_tools(server, client_provider, read_only=resolved.read_only)
-    register_order_tools(
-        server,
-        client_provider,
-        read_only=resolved.read_only,
-        yolo_mode=resolved.yolo_mode,
-    )
-    register_sessiontan_tools(server, client_provider, read_only=resolved.read_only)
+    register_watchlist_tools(server, client_provider, read_only=read_only)
+    register_order_tools(server, client_provider, mode=mode)
+    register_sessiontan_tools(server, client_provider, read_only=read_only)
     return server
 
 
@@ -140,21 +134,15 @@ def main() -> None:
         raise SystemExit(2) from exc
 
     logger.info(
-        "starting %s %s over stdio (%s, credentials %s)",
+        "starting %s %s over stdio (mode %s, credentials %s)",
         SERVER_TITLE,
         __version__,
-        "read-only"
-        if settings.read_only
-        else (
-            "trading enabled, YOLO mode (no confirmation)"
-            if settings.yolo_mode
-            else "trading enabled"
-        ),
+        settings.mode,
         "configured"
         if settings.username and settings.password is not None
         else "not configured",
     )
-    if settings.yolo_mode and not settings.read_only:
+    if settings.mode is TradeMode.YOLO:
         logger.warning(
             "YOLO mode is enabled: order tools will place and cancel real "
             "orders without asking the user for confirmation"

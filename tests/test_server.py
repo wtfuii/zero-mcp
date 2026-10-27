@@ -15,7 +15,7 @@ from zero_api.account.models import MoneyTransactionAccount
 from zero_api.core.exceptions import AuthenticationError, BrokerApiError, TwoFactorError
 
 from zero_mcp.client import ClientProvider
-from zero_mcp.config import Settings
+from zero_mcp.config import Settings, TradeMode
 from zero_mcp.server import create_server
 
 pytestmark = pytest.mark.anyio
@@ -44,15 +44,13 @@ READ_TOOLS = {
 def make_server(
     provider: ClientProvider,
     *,
-    read_only: bool = False,
-    yolo_mode: bool = False,
+    mode: TradeMode = TradeMode.WRITE,
 ) -> MCPServer[Any]:
     return create_server(
         Settings(
             username="user@example.com",
             password=SecretStr("pass"),
-            read_only=read_only,
-            yolo_mode=yolo_mode,
+            mode=mode,
         ),
         provider=provider,
     )
@@ -74,13 +72,18 @@ async def test_lists_all_tools_without_credentials_or_network() -> None:
     assert all(tool.description for tool in tools.tools)
 
 
-async def test_read_only_mode_hides_every_write_tool(provider: ClientProvider) -> None:
-    server = make_server(provider, read_only=True)
+async def test_read_mode_hides_every_write_tool(provider: ClientProvider) -> None:
+    server = make_server(provider, mode=TradeMode.READ)
 
     async with Client(server) as client:
         tools = await client.list_tools()
+        instructions = client.instructions
 
     assert {tool.name for tool in tools.tools} == READ_TOOLS
+    assert instructions is not None
+    assert "READ-ONLY" in instructions
+    assert "ZERO_MODE=READ" in instructions
+    assert "YOLO MODE IS ENABLED" not in instructions
 
 
 async def test_default_instructions_require_explicit_confirmation(
@@ -106,7 +109,7 @@ async def test_default_instructions_require_explicit_confirmation(
 async def test_yolo_mode_authorises_orders_without_confirmation(
     provider: ClientProvider,
 ) -> None:
-    server = make_server(provider, yolo_mode=True)
+    server = make_server(provider, mode=TradeMode.YOLO)
 
     async with Client(server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
@@ -114,6 +117,7 @@ async def test_yolo_mode_authorises_orders_without_confirmation(
 
     assert instructions is not None
     assert "YOLO MODE IS ENABLED" in instructions
+    assert "ZERO_MODE=YOLO" in instructions
     assert "without asking the user to confirm" in " ".join(instructions.split())
     assert "Never call place_order" not in instructions
 
@@ -128,21 +132,6 @@ async def test_yolo_mode_authorises_orders_without_confirmation(
         assert tool_description is not None
         assert "YOLO mode is ENABLED" in tool_description
         assert "explicitly confirmed" not in tool_description
-
-
-async def test_read_only_mode_takes_precedence_over_yolo_mode(
-    provider: ClientProvider,
-) -> None:
-    server = make_server(provider, read_only=True, yolo_mode=True)
-
-    async with Client(server) as client:
-        tools = await client.list_tools()
-        instructions = client.instructions
-
-    assert {tool.name for tool in tools.tools} == READ_TOOLS
-    assert instructions is not None
-    assert "READ-ONLY" in instructions
-    assert "YOLO MODE IS ENABLED" not in instructions
 
 
 async def test_list_orders_filter_is_enumerated_in_the_tool_schema(
@@ -250,7 +239,7 @@ async def test_stdio_entrypoint_starts_and_lists_tools() -> None:
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "zero_mcp"],
-        env={"ZERO_READ_ONLY": "true"},
+        env={"ZERO_MODE": "READ"},
     )
 
     async with Client(params, read_timeout_seconds=30) as client:
@@ -263,11 +252,11 @@ async def test_stdio_entrypoint_starts_and_lists_tools() -> None:
 
 
 async def test_stdio_entrypoint_honours_yolo_mode() -> None:
-    """The real entrypoint reads ZERO_YOLO_MODE from its environment."""
+    """The real entrypoint reads ZERO_MODE=YOLO from its environment."""
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "zero_mcp"],
-        env={"ZERO_YOLO_MODE": "true"},
+        env={"ZERO_MODE": "YOLO"},
     )
 
     async with Client(params, read_timeout_seconds=30) as client:

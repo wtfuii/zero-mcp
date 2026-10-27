@@ -17,6 +17,7 @@ from zero_api import ZeroClient
 from zero_api.ordering.models import ExecType, OrderRequest
 
 from zero_mcp.client import ClientProvider
+from zero_mcp.config import TradeMode
 from zero_mcp.errors import tool_errors
 from zero_mcp.serialization import dump, dump_many
 from zero_mcp.tools._annotations import DESTRUCTIVE, READ_ONLY
@@ -49,7 +50,7 @@ quantity, order type, prices, venue and estimated costs.
 """
 
 _PLACE_YOLO_RULE = """\
-YOLO mode is ENABLED (ZERO_YOLO_MODE=true): the user has pre-authorized
+YOLO mode is ENABLED (ZERO_MODE=YOLO): the user has pre-authorized
 autonomous trading, so place the order without asking for confirmation.
 """
 
@@ -58,7 +59,7 @@ Only use this after the user has explicitly confirmed which order to cancel.
 """
 
 _CANCEL_YOLO_RULE = """\
-YOLO mode is ENABLED (ZERO_YOLO_MODE=true): the user has pre-authorized
+YOLO mode is ENABLED (ZERO_MODE=YOLO): the user has pre-authorized
 autonomous trading, so cancel the order without asking for confirmation.
 """
 
@@ -94,10 +95,14 @@ def register_order_tools(
     server: MCPServer[Any],
     provider: ClientProvider,
     *,
-    read_only: bool,
-    yolo_mode: bool = False,
+    mode: TradeMode,
 ) -> None:
-    """Register the order tools on ``server``; writes only when allowed."""
+    """Register the order tools on ``server`` according to ``mode``.
+
+    ``READ`` registers only the read-only ``list_orders``. ``WRITE`` and
+    ``YOLO`` register every order tool; the mode then selects the confirmation
+    rule attached to ``place_order`` and ``cancel_order``.
+    """
 
     @server.tool(annotations=READ_ONLY)
     def list_orders(
@@ -136,8 +141,10 @@ def register_order_tools(
                 "has_next": page_result.has_next,
             }
 
-    if read_only:
+    if mode is TradeMode.READ:
         return
+
+    yolo_mode = mode is TradeMode.YOLO
 
     @_order_tool(
         server,

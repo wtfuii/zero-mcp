@@ -3,41 +3,29 @@
 import pytest
 from pydantic import SecretStr
 
-from zero_mcp.config import ConfigurationError, Settings
+from zero_mcp.config import ConfigurationError, Settings, TradeMode
 
 
-def test_defaults_are_read_only_and_unconfigured() -> None:
+def test_defaults_are_write_mode_and_unconfigured() -> None:
     settings = Settings()
-    assert settings.read_only is False
-    assert settings.yolo_mode is False
+    assert settings.mode is TradeMode.WRITE
     assert settings.default_device is None
     with pytest.raises(ConfigurationError, match="ZERO_USERNAME and ZERO_PASSWORD"):
         settings.require_credentials()
 
 
-def test_yolo_mode_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ZERO_YOLO_MODE", "true")
-
-    assert Settings().yolo_mode is True
-
-
-def test_unprefixed_yolo_mode_alias_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("YOLO_MODE", "true")
-
-    assert Settings().yolo_mode is True
-
-
-def test_prefixed_yolo_mode_wins_when_both_aliases_are_set(
+@pytest.mark.parametrize("mode", ["READ", "WRITE", "YOLO", "read", "Write", " yolo "])
+def test_mode_is_read_from_the_environment_case_insensitively(
     monkeypatch: pytest.MonkeyPatch,
+    mode: str,
 ) -> None:
-    monkeypatch.setenv("ZERO_YOLO_MODE", "false")
-    monkeypatch.setenv("YOLO_MODE", "true")
+    monkeypatch.setenv("ZERO_MODE", mode)
 
-    assert Settings().yolo_mode is False
+    assert Settings().mode is TradeMode[mode.strip().upper()]
 
 
-def test_yolo_mode_rejects_an_invalid_boolean(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ZERO_YOLO_MODE", "sometimes")
+def test_mode_rejects_an_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ZERO_MODE", "readonly")
 
     with pytest.raises(ValueError):
         Settings()
@@ -47,24 +35,24 @@ def test_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ZERO_USERNAME", "  klaus@example.com ")
     monkeypatch.setenv("ZERO_PASSWORD", "s3cret")
     monkeypatch.setenv("ZERO_DEFAULT_DEVICE", "device-1")
-    monkeypatch.setenv("ZERO_READ_ONLY", "true")
+    monkeypatch.setenv("ZERO_MODE", "READ")
 
     settings = Settings()
 
     assert settings.require_credentials() == ("klaus@example.com", "s3cret")
     assert settings.default_device == "device-1"
-    assert settings.read_only is True
+    assert settings.mode is TradeMode.READ
 
 
 def test_values_are_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("zero_username", "user@example.com")
     monkeypatch.setenv("zero_password", "pass")
-    monkeypatch.setenv("zero_read_only", "TRUE")
+    monkeypatch.setenv("zero_mode", "read")
 
     settings = Settings()
 
     assert settings.require_credentials() == ("user@example.com", "pass")
-    assert settings.read_only is True
+    assert settings.mode is TradeMode.READ
 
 
 def test_missing_password_is_named() -> None:
@@ -82,9 +70,3 @@ def test_whitespace_password_is_missing() -> None:
 def test_password_never_appears_in_repr() -> None:
     settings = Settings(username="user@example.com", password=SecretStr("super-secret"))
     assert "super-secret" not in repr(settings)
-
-
-def test_invalid_boolean_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ZERO_READ_ONLY", "sometimes")
-    with pytest.raises(ValueError):
-        Settings()
