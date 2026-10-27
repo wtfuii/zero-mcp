@@ -1,7 +1,7 @@
 # Releasing
 
 `finanzen-zero-mcp` is published to PyPI by
-[`.github/workflows/release.yml`](.github/workflows/release.yml). The pipeline is tag-driven, uses
+[`.github/workflows/release.yaml`](.github/workflows/release.yaml). The pipeline is tag-driven, uses
 PyPI [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC, no API token secret),
 verifies the tag against the package version, and creates a GitHub release with the built artifacts.
 
@@ -18,7 +18,7 @@ verifies the tag against the package version, and creates a GitHub release with 
    | PyPI Project Name | `finanzen-zero-mcp` |
    | Owner | `wtfuii` |
    | Repository name | `zero-mcp` |
-   | Workflow name | `release.yml` |
+   | Workflow name | `release.yaml` |
    | Environment name | `pypi` |
 
 3. In the GitHub repository, open **Settings → Environments** and create an environment named
@@ -34,7 +34,7 @@ Repeat the same steps at <https://test.pypi.org> with:
 | PyPI Project Name | `finanzen-zero-mcp` |
 | Owner | `wtfuii` |
 | Repository name | `zero-mcp` |
-| Workflow name | `release.yml` |
+| Workflow name | `release.yaml` |
 | Environment name | `testpypi` |
 
 Create the corresponding `testpypi` environment in GitHub. A dry-run publish requires the project

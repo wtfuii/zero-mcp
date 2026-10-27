@@ -71,7 +71,7 @@ tests/
 - Runtime dependencies are deliberately few: `finanzen-zero-api`, `mcp`, `pydantic`, `pydantic-settings`. Do not add a web framework, browser, or HTTP client.
 - Keep the `finanzen-zero-api` range (`>=0.1.0,<0.2.0`) aligned with the library's alpha status. If the library changes model shapes, update this wrapper and its tests rather than loosening validation.
 - Build/verify packaging with `uv build`; CI also runs `uvx twine check --strict dist/*`.
-- The PyPI distribution is **`finanzen-zero-mcp`** (import package `zero_mcp`, console script `zero-mcp`). The version is duplicated in `pyproject.toml` and `src/zero_mcp/__init__.py`; keep them equal. Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/release.yml` (PyPI Trusted Publishing). See `RELEASING.md` before changing the package name, version scheme or publish workflow.
+- The PyPI distribution is **`finanzen-zero-mcp`** (import package `zero_mcp`, console script `zero-mcp`). The version is duplicated in `pyproject.toml` and `src/zero_mcp/__init__.py`; keep them equal. Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/release.yaml` (PyPI Trusted Publishing). See `RELEASING.md` before changing the package name, version scheme or publish workflow.
 
 ## Status
 
