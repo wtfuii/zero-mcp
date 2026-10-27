@@ -54,7 +54,7 @@ tests/
 - Output keys are the library's **snake_case field names**, not broker camelCase aliases. Decimals are JSON strings to preserve precision; datetimes are ISO 8601. `get_chart` deliberately rebuilds each bar to expose `open` instead of the model's Python-only `open_`.
 - Tool names have no prefix (`get_account`, `place_order`, …); the server is namespaced by the MCP host. Keep names verb-first and stable.
 - `place_order` resolves a missing `mic_code` from the instrument's default trading venue (one extra master-data call); an explicit MIC skips that call.
-- Tool docstrings are user-facing model instructions. They must state side effects, blocking behaviour and the confirmation rule for real-money operations, including the `ZERO_YOLO_MODE` exception.
+- Tool descriptions are user-facing model instructions. The order tools combine their docstrings with the active confirmation or YOLO rule; they must state side effects, blocking behaviour and the confirmation requirement.
 - When adding/removing/renaming a tool, update **all** of: registration, tests (`tests/test_server.py` tool sets), README tool table, and `READ_TOOLS`/`WRITE_TOOLS` expectations.
 
 ## Testing

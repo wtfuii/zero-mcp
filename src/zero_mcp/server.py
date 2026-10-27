@@ -113,7 +113,12 @@ def create_server(
     register_instrument_tools(server, client_provider)
     register_portfolio_tools(server, client_provider)
     register_watchlist_tools(server, client_provider, read_only=resolved.read_only)
-    register_order_tools(server, client_provider, read_only=resolved.read_only)
+    register_order_tools(
+        server,
+        client_provider,
+        read_only=resolved.read_only,
+        yolo_mode=resolved.yolo_mode,
+    )
     register_sessiontan_tools(server, client_provider, read_only=resolved.read_only)
     return server
 

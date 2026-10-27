@@ -89,11 +89,18 @@ async def test_default_instructions_require_explicit_confirmation(
     server = make_server(provider)
 
     async with Client(server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         instructions = client.instructions
 
     assert instructions is not None
     assert "explicit confirmation" in instructions
     assert "YOLO MODE IS ENABLED" not in instructions
+
+    for name in ("place_order", "cancel_order"):
+        description = tools[name].description
+        assert description is not None
+        assert "explicitly confirmed" in description
+        assert "YOLO mode" not in description
 
 
 async def test_yolo_mode_authorises_orders_without_confirmation(
@@ -116,9 +123,11 @@ async def test_yolo_mode_authorises_orders_without_confirmation(
     assert annotations is not None
     assert annotations.read_only_hint is False
     assert annotations.destructive_hint is True
-    description = tools["place_order"].description
-    assert description is not None
-    assert "YOLO mode" in description
+    for name in ("place_order", "cancel_order"):
+        tool_description = tools[name].description
+        assert tool_description is not None
+        assert "YOLO mode is ENABLED" in tool_description
+        assert "explicitly confirmed" not in tool_description
 
 
 async def test_read_only_mode_takes_precedence_over_yolo_mode(
@@ -251,6 +260,23 @@ async def test_stdio_entrypoint_starts_and_lists_tools() -> None:
     assert {tool.name for tool in tools.tools} == READ_TOOLS
     assert instructions is not None
     assert "READ-ONLY" in instructions
+
+
+async def test_stdio_entrypoint_honours_yolo_mode() -> None:
+    """The real entrypoint reads ZERO_YOLO_MODE from its environment."""
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "zero_mcp"],
+        env={"ZERO_YOLO_MODE": "true"},
+    )
+
+    async with Client(params, read_timeout_seconds=30) as client:
+        tools = await client.list_tools()
+        instructions = client.instructions
+
+    assert {tool.name for tool in tools.tools} == READ_TOOLS | WRITE_TOOLS
+    assert instructions is not None
+    assert "YOLO MODE IS ENABLED" in instructions
 
 
 @pytest.mark.parametrize(

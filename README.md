@@ -272,7 +272,8 @@ Once the server is connected, ask the assistant in natural language:
 - “What is my current buying power and next closing date?”
 - “Search for Apple and show me the one-year chart.”
 - “Which positions do I hold and what are they worth at the latest quote?”
-- “List my open orders and cancel order ID `GBR…`.” — requires confirmation and 2FA approval.
+- “List my open orders and cancel order ID `GBR…`.” — requires 2FA approval, plus confirmation
+  unless `ZERO_YOLO_MODE=true` is set.
 - “Place a limit buy for 1 share of Apple at €200 on gettex.” — the assistant repeats every
   parameter and asks for explicit confirmation before calling `place_order`, unless
   `ZERO_YOLO_MODE=true` is set.

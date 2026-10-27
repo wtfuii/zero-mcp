@@ -5,9 +5,10 @@ runs the broker's own submit flow (2FA unlock, ``/verify`` precheck, ex-ante
 cost document) and blocks while the push notification is approved.
 """
 
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -42,12 +43,59 @@ _STATUS_HELP = (
     "order's 'status' field."
 )
 
+_PLACE_CONFIRMATION_RULE = """\
+Only use this after the user has explicitly confirmed the instrument, side,
+quantity, order type, prices, venue and estimated costs.
+"""
+
+_PLACE_YOLO_RULE = """\
+YOLO mode is ENABLED (ZERO_YOLO_MODE=true): the user has pre-authorized
+autonomous trading, so place the order without asking for confirmation.
+"""
+
+_CANCEL_CONFIRMATION_RULE = """\
+Only use this after the user has explicitly confirmed which order to cancel.
+"""
+
+_CANCEL_YOLO_RULE = """\
+YOLO mode is ENABLED (ZERO_YOLO_MODE=true): the user has pre-authorized
+autonomous trading, so cancel the order without asking for confirmation.
+"""
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _order_tool(
+    server: MCPServer[Any],
+    *,
+    confirmation_rule: str,
+    yolo_rule: str,
+    yolo_mode: bool,
+) -> Callable[[_F], _F]:
+    """Register a real-money tool with the rule for the active mode.
+
+    The rule follows the tool's first docstring paragraph, so the active mode
+    reaches the model even when an MCP host does not forward server
+    instructions.
+    """
+    rule = yolo_rule if yolo_mode else confirmation_rule
+
+    def decorator(fn: _F) -> _F:
+        intro, _, rest = (fn.__doc__ or "").strip().partition("\n\n")
+        description = f"{intro}\n\n{rule}"
+        if rest:
+            description += f"\n\n{rest}"
+        return server.tool(annotations=DESTRUCTIVE, description=description)(fn)
+
+    return decorator
+
 
 def register_order_tools(
     server: MCPServer[Any],
     provider: ClientProvider,
     *,
     read_only: bool,
+    yolo_mode: bool = False,
 ) -> None:
     """Register the order tools on ``server``; writes only when allowed."""
 
@@ -91,7 +139,12 @@ def register_order_tools(
     if read_only:
         return
 
-    @server.tool(annotations=DESTRUCTIVE)
+    @_order_tool(
+        server,
+        confirmation_rule=_PLACE_CONFIRMATION_RULE,
+        yolo_rule=_PLACE_YOLO_RULE,
+        yolo_mode=yolo_mode,
+    )
     def place_order(
         isin: Annotated[str, Field(description="ISIN, e.g. US0378331005.")],
         direction: Annotated[
@@ -200,12 +253,7 @@ def register_order_tools(
     ) -> dict[str, Any]:
         """Place a real order on Finanzen.net ZERO.
 
-        This moves real money and cannot be undone if the order fills. Normally,
-        only use it after the user has explicitly confirmed instrument, side,
-        quantity, type, prices, venue and estimated costs. In YOLO mode
-        (ZERO_YOLO_MODE=true, announced in the server instructions) the user has
-        pre-authorized autonomous trading: place the order without asking for
-        confirmation.
+        This moves real money and cannot be undone if the order fills.
 
         Before calling, fetch get_instrument and check the instrument's
         tradable state, disabled_exec_types, min_qty, qty_incr, price_incr,
@@ -245,7 +293,12 @@ def register_order_tools(
             )
             return dump(client.orders.place(request, device=device_serial))
 
-    @server.tool(annotations=DESTRUCTIVE)
+    @_order_tool(
+        server,
+        confirmation_rule=_CANCEL_CONFIRMATION_RULE,
+        yolo_rule=_CANCEL_YOLO_RULE,
+        yolo_mode=yolo_mode,
+    )
     def cancel_order(
         order_id: Annotated[
             str,
@@ -262,10 +315,7 @@ def register_order_tools(
     ) -> dict[str, Any]:
         """Cancel a working order by its ``order_id``.
 
-        This changes a real order. Normally, only call it after the user has
-        explicitly confirmed which order to cancel. In YOLO mode
-        (ZERO_YOLO_MODE=true, announced in the server instructions) cancel
-        without asking for confirmation. Use list_orders to get the string
+        This changes a real order. Use list_orders to get the string
         ``order_id`` and to check that the order is still working. Filled,
         expired, rejected or already-cancelled orders cannot be cancelled.
 
